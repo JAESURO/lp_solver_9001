@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Offline Production Planning Solver</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 30px; background: #f7f9fc; }
+h1 { color: #333; }
+input, button { padding: 5px; margin: 4px; }
+table { border-collapse: collapse; margin-top: 10px; }
+th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: center; }
+th { background-color: #e8eff5; }
+.result-box { background: #fff; padding: 10px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-top: 20px; }
+</style>
+</head>
+<body>
+<h1>Production Planning Linear Programming Solver (Offline)</h1>
+
+<label>Number of Products: <input type="number" id="numProducts" value="2" min="1"></label>
+<label>Number of Resources: <input type="number" id="numResources" value="2" min="1"></label>
+<button onclick="generateTables()">Generate Tables</button>
+
+<div id="inputTables"></div>
+<button id="solveBtn" style="display:none" onclick="solveLP()">Solve</button>
+
+<div class="result-box" id="result"></div>
+
+<script>
+function solveLPProblem(model){
+  return window.solver.Solve(model);
+}
+</script>
+
+<script>
+window.solver = {};
+
+(function(){
+function Solve(model){
+  const variableNames = Object.keys(model.variables);
+  const constraintList = model.constraints;
+  const objectiveFunction = model.optimize;
+  const optimizationDirection = model.opType || "max";
+  
+  const variableBounds = [];
+  for(let i = 0; i < variableNames.length; i++){
+    variableBounds.push({name: variableNames[i], min: 0});
+  }
+  
+  let bestValue = optimizationDirection === "max" ? -1000000000 : 1000000000;
+  let bestSolution = {};
+  const searchStep = 1;
+  
+  function isFeasible(solution){
+    for(let constraintName in constraintList){
+      const currentConstraint = constraintList[constraintName];
+      let leftHandSide = 0;
+      
+      for(let variableName in currentConstraint.vars){
+        const coefficient = currentConstraint.vars[variableName];
+        const variableValue = solution[variableName] || 0;
+        leftHandSide = leftHandSide + coefficient * variableValue;
+      }
+      
+      if(currentConstraint.type === "<=" && leftHandSide > currentConstraint.value + 0.000001){
+        return false;
+      }
+      if(currentConstraint.type === ">=" && leftHandSide < currentConstraint.value - 0.000001){
+        return false;
+      }
+    }
+    return true;
+  }
+  
+  function calculateObjective(solution){
+    let objectiveValue = 0;
+    for(let variableName in objectiveFunction){
+      const coefficient = objectiveFunction[variableName];
+      const variableValue = solution[variableName] || 0;
+      objectiveValue = objectiveValue + coefficient * variableValue;
+    }
+    return objectiveValue;
+  }
+  
+  function searchSolutions(variableIndex, currentSolution){
+    if(variableIndex >= variableNames.length){
+      if(isFeasible(currentSolution)){
+        const objectiveValue = calculateObjective(currentSolution);
+        const isBetter = (optimizationDirection === "max" && objectiveValue > bestValue) || 
+                        (optimizationDirection === "min" && objectiveValue < bestValue);
+        
+        if(isBetter){
+          bestValue = objectiveValue;
+          bestSolution = Object.assign({}, currentSolution);
+        }
+      }
+      return;
+    }
+    
+    const currentVariable = variableNames[variableIndex];
+    const maxSearchValue = 50;
+    
+    for(let testValue = 0; testValue <= maxSearchValue; testValue = testValue + searchStep){
+      currentSolution[currentVariable] = testValue;
+      searchSolutions(variableIndex + 1, currentSolution);
+    }
+  }
+  
+  searchSolutions(0, {});
+  bestSolution.result = bestValue;
+  return bestSolution;
+}
+
+window.solver.Solve = Solve;
+})();
+</script>
+
+<script>
+function generateTables(){
+  const numProducts = parseInt(document.getElementById('numProducts').value);
+  const numResources = parseInt(document.getElementById('numResources').value);
+  
+  let html = "<h3>Step 1: Enter Profit per Product</h3>";
+  html = html + "<table><tr><th>Product</th><th>Profit</th></tr>";
+  
+  for(let productIndex = 0; productIndex < numProducts; productIndex++){
+    const productNumber = productIndex + 1;
+    const inputId = 'profit_' + productIndex;
+    html = html + "<tr><td>P" + productNumber + "</td>";
+    html = html + "<td><input type='number' id='" + inputId + "' value='10'></td></tr>";
+  }
+  
+  html = html + "</table>";
+  html = html + "<h3>Step 2: Resource Usage Matrix</h3>";
+  html = html + "<table><tr><th>Resource \\ Product</th>";
+  
+  for(let productIndex = 0; productIndex < numProducts; productIndex++){
+    const productNumber = productIndex + 1;
+    html = html + "<th>P" + productNumber + "</th>";
+  }
+  
+  html = html + "</tr>";
+  
+  for(let resourceIndex = 0; resourceIndex < numResources; resourceIndex++){
+    const resourceNumber = resourceIndex + 1;
+    html = html + "<tr><td>R" + resourceNumber + "</td>";
+    
+    for(let productIndex = 0; productIndex < numProducts; productIndex++){
+      const inputId = 'a_' + resourceIndex + '_' + productIndex;
+      html = html + "<td><input type='number' id='" + inputId + "' value='1'></td>";
+    }
+    
+    html = html + "</tr>";
+  }
+  
+  html = html + "</table>";
+  html = html + "<h3>Step 3: Resource Availability</h3>";
+  html = html + "<table><tr><th>Resource</th><th>Limit</th></tr>";
+  
+  for(let resourceIndex = 0; resourceIndex < numResources; resourceIndex++){
+    const resourceNumber = resourceIndex + 1;
+    const inputId = 'b_' + resourceIndex;
+    html = html + "<tr><td>R" + resourceNumber + "</td>";
+    html = html + "<td><input type='number' id='" + inputId + "' value='100'></td></tr>";
+  }
+  
+  html = html + "</table>";
+  
+  document.getElementById('inputTables').innerHTML = html;
+  document.getElementById('solveBtn').style.display = 'inline-block';
+}
+
+function solveLP(){
+  const numProducts = parseInt(document.getElementById('numProducts').value);
+  const numResources = parseInt(document.getElementById('numResources').value);
+  
+  const profitValues = [];
+  const resourceLimits = [];
+  const resourceUsageMatrix = [];
+  
+  for(let productIndex = 0; productIndex < numProducts; productIndex++){
+    const inputId = 'profit_' + productIndex;
+    const profitInput = document.getElementById(inputId);
+    const profitValue = parseFloat(profitInput.value);
+    profitValues.push(profitValue);
+  }
+  
+  for(let resourceIndex = 0; resourceIndex < numResources; resourceIndex++){
+    const limitInputId = 'b_' + resourceIndex;
+    const limitInput = document.getElementById(limitInputId);
+    const limitValue = parseFloat(limitInput.value);
+    resourceLimits.push(limitValue);
+    
+    resourceUsageMatrix[resourceIndex] = [];
+    
+    for(let productIndex = 0; productIndex < numProducts; productIndex++){
+      const usageInputId = 'a_' + resourceIndex + '_' + productIndex;
+      const usageInput = document.getElementById(usageInputId);
+      const usageValue = parseFloat(usageInput.value);
+      resourceUsageMatrix[resourceIndex][productIndex] = usageValue;
+    }
+  }
+  
+  const model = {
+    optimize: {},
+    opType: "max",
+    constraints: {},
+    variables: {}
+  };
+  
+  for(let productIndex = 0; productIndex < numProducts; productIndex++){
+    const variableName = "x" + productIndex;
+    model.optimize[variableName] = profitValues[productIndex];
+  }
+  
+  for(let resourceIndex = 0; resourceIndex < numResources; resourceIndex++){
+    const constraintName = "R" + resourceIndex;
+    model.constraints[constraintName] = {
+      type: "<=",
+      value: resourceLimits[resourceIndex],
+      vars: {}
+    };
+    
+    for(let productIndex = 0; productIndex < numProducts; productIndex++){
+      const variableName = "x" + productIndex;
+      const coefficient = resourceUsageMatrix[resourceIndex][productIndex];
+      model.constraints[constraintName].vars[variableName] = coefficient;
+    }
+  }
+  
+  for(let productIndex = 0; productIndex < numProducts; productIndex++){
+    const variableName = "x" + productIndex;
+    model.variables[variableName] = {};
+    
+    for(let resourceIndex = 0; resourceIndex < numResources; resourceIndex++){
+      const constraintName = "R" + resourceIndex;
+      const coefficient = resourceUsageMatrix[resourceIndex][productIndex];
+      model.variables[variableName][constraintName] = coefficient;
+    }
+  }
+  
+  const solution = solveLPProblem(model);
+  
+  let resultHtml = "<h3>Optimal Solution</h3>";
+  resultHtml = resultHtml + "<table><tr><th>Variable</th><th>Value</th></tr>";
+  
+  for(let productIndex = 0; productIndex < numProducts; productIndex++){
+    const variableName = "x" + productIndex;
+    const displayNumber = productIndex + 1;
+    const variableValue = solution[variableName] || 0;
+    resultHtml = resultHtml + "<tr><td>x" + displayNumber + "</td>";
+    resultHtml = resultHtml + "<td>" + variableValue + "</td></tr>";
+  }
+  
+  resultHtml = resultHtml + "</table>";
+  const maximumProfit = solution.result.toFixed(2);
+  resultHtml = resultHtml + "<h3>Maximum Profit = " + maximumProfit + "</h3>";
+  
+  document.getElementById('result').innerHTML = resultHtml;
+}
+</script>
+
+</body>
+</html>

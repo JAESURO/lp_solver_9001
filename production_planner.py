@@ -1,96 +1,96 @@
-def create_tableau(profits, usage_matrix, limits):
+def solve(profits, usage_matrix, limits):
     num_products = len(profits)
     num_resources = len(limits)
-    num_cols = num_products + num_resources + 1
-    num_rows = num_resources + 1
+    num_vars = num_products + num_resources
     
-    tableau = []
-    for i in range(num_rows):
-        row = [0.0] * num_cols
-        tableau.append(row)
+    c = [0.0] * num_vars
+    for i in range(num_products):
+        c[i] = profits[i]
     
+    A = []
     for r in range(num_resources):
+        row = []
         for p in range(num_products):
-            tableau[r][p] = usage_matrix[r][p]
-        tableau[r][num_products + r] = 1.0
-        tableau[r][num_cols - 1] = limits[r]
+            row.append(usage_matrix[r][p])
+        for s in range(num_resources):
+            if s == r:
+                row.append(1.0)
+            else:
+                row.append(0.0)
+        A.append(row)
     
-    for p in range(num_products):
-        tableau[num_resources][p] = -profits[p]
+    basic_vars = []
+    cb = []
+    for i in range(num_resources):
+        basic_vars.append(num_products + i)
+        cb.append(0.0)
     
-    return tableau
-
-def find_pivot_col(tableau):
-    last_row = tableau[-1]
-    min_val = 0.0
-    min_col = None
+    xb = []
+    for i in range(num_resources):
+        xb.append(limits[i])
     
-    for col in range(len(last_row) - 1):
-        if last_row[col] < min_val:
-            min_val = last_row[col]
-            min_col = col
-    
-    return min_col
-
-def find_pivot_row(tableau, col):
-    num_rows = len(tableau) - 1
-    best_ratio = float('inf')
-    best_row = None
-    
-    for row in range(num_rows):
-        if tableau[row][col] > 0:
-            ratio = tableau[row][-1] / tableau[row][col]
-            if ratio < best_ratio:
-                best_ratio = ratio
-                best_row = row
-    
-    return best_row
-
-def pivot(tableau, row, col):
-    pivot_val = tableau[row][col]
-    num_cols = len(tableau[0])
-    
-    for c in range(num_cols):
-        tableau[row][c] = tableau[row][c] / pivot_val
-    
-    for r in range(len(tableau)):
-        if r != row:
-            mult = tableau[r][col]
-            for c in range(num_cols):
-                tableau[r][c] = tableau[r][c] - mult * tableau[row][c]
-
-def solve(profits, usage_matrix, limits):
-    tableau = create_tableau(profits, usage_matrix, limits)
-    num_products = len(profits)
-    
-    for _ in range(100):
-        pivot_col = find_pivot_col(tableau)
-        if pivot_col is None:
+    for iteration in range(100):
+        rel_prof = []
+        for j in range(num_vars):
+            zj = 0.0
+            for i in range(num_resources):
+                zj = zj + cb[i] * A[i][j]
+            rel_prof.append(c[j] - zj)
+        
+        max_prof = 0.0
+        enter_var = -1
+        for j in range(num_vars):
+            if rel_prof[j] > max_prof:
+                max_prof = rel_prof[j]
+                enter_var = j
+        
+        if enter_var == -1:
             break
         
-        pivot_row = find_pivot_row(tableau, pivot_col)
-        if pivot_row is None:
+        min_ratio = float('inf')
+        leave_row = -1
+        for i in range(num_resources):
+            if A[i][enter_var] > 0.000001 and xb[i] > 0.000001:
+                ratio = xb[i] / A[i][enter_var]
+                if ratio < min_ratio:
+                    min_ratio = ratio
+                    leave_row = i
+        
+        if leave_row == -1:
             print("Problem is unbounded")
             return None
         
-        pivot(tableau, pivot_row, pivot_col)
+        pivot = A[leave_row][enter_var]
+        
+        for j in range(num_vars):
+            A[leave_row][j] = A[leave_row][j] / pivot
+        xb[leave_row] = xb[leave_row] / pivot
+        
+        for i in range(num_resources):
+            if i != leave_row:
+                mult = A[i][enter_var]
+                for j in range(num_vars):
+                    A[i][j] = A[i][j] - mult * A[leave_row][j]
+                xb[i] = xb[i] - mult * xb[leave_row]
+        
+        basic_vars[leave_row] = enter_var
+        cb[leave_row] = c[enter_var]
     
     solution = {}
-    num_resources = len(limits)
-    
     for p in range(num_products):
         found = False
-        for r in range(num_resources):
-            if abs(tableau[r][p] - 1.0) < 0.000001:
-                solution[p] = tableau[r][-1]
+        for i in range(num_resources):
+            if basic_vars[i] == p:
+                solution[p] = xb[i]
                 found = True
-                break
-            elif abs(tableau[r][p]) > 0.000001:
                 break
         if not found:
             solution[p] = 0.0
     
-    optimal = tableau[-1][-1]
+    optimal = 0.0
+    for i in range(num_resources):
+        optimal = optimal + cb[i] * xb[i]
+    
     return solution, optimal
 
 def interactive_mode():
@@ -140,15 +140,21 @@ def interactive_mode():
 def example_mode():
     print("Example Problem")
     print("=" * 40)
-    print("2 products, 2 resources")
-    print("Profits: P1=$10, P2=$15")
-    print("Usage: R1->P1:1,P2:2  R2->P1:2,P2:1")
-    print("Limits: R1=100, R2=100")
+    print("3 products (A, B, C)")
+    print("Maximize Z = 4x1 + 3x2 + 6x3")
+    print("\nConstraints:")
+    print("  2x1 + 3x2 + 2x3 <= 440")
+    print("  4x1 + 0x2 + 3x3 <= 470")
+    print("  2x1 + 5x2 + 0x3 <= 430")
     print("=" * 40)
     
-    profits = [10.0, 15.0]
-    usage_matrix = [[1.0, 2.0], [2.0, 1.0]]
-    limits = [100.0, 100.0]
+    profits = [4.0, 3.0, 6.0]
+    usage_matrix = [
+        [2.0, 3.0, 2.0],
+        [4.0, 0.0, 3.0],
+        [2.0, 5.0, 0.0]
+    ]
+    limits = [440.0, 470.0, 430.0]
     
     result = solve(profits, usage_matrix, limits)
     
@@ -159,9 +165,11 @@ def example_mode():
     
     print("\nOPTIMAL SOLUTION")
     print("=" * 40)
-    print(f"Product 1: {solution[0]:.2f}")
-    print(f"Product 2: {solution[1]:.2f}")
-    print(f"\nMaximum Profit: ${optimal:.2f}")
+    print(f"Product A (x1): {solution[0]:.2f}")
+    print(f"Product B (x2): {solution[1]:.2f}")
+    print(f"Product C (x3): {solution[2]:.2f}")
+    print(f"\nMaximum Profit (Z): {optimal:.2f}")
+    print(f"\nExpected: x1=0, x2=380/9≈42.22, x3=470/3≈156.67, Z=3200/3≈1066.67")
 
 if __name__ == "__main__":
     print("Choose mode:")

@@ -22,15 +22,25 @@ def interactive_mode():
         print(f"  Resource {r+1}: {row}")
     
     constraint_types = []
-    print("\nConstraint types (<=, >=, =):")
+    print("\nConstraint types for each resource:")
+    print("Enter '<=', '>=', or '=' for each constraint")
     for r in range(num_resources):
-        ct = input(f"  Constraint {r+1}: ").strip()
-        constraint_types.append(ct if ct in ["<=", ">=", "="] else "<=")
+        ct = input(f"  Constraint {r+1} type: ").strip()
+        if ct == "=>":
+            ct = ">="
+            print(f"    (Corrected '=>' to '>=')")
+        if ct not in ["<=", ">=", "="]:
+            print(f"    Warning: Invalid type '{ct}', using '<=' as default")
+            ct = "<="
+        constraint_types.append(ct)
+        print(f"    Using: {ct}")
     
-    resource_limits = [float(input(f"  Constraint {r+1}: ")) for r in range(num_resources)]
+    resource_limits = []
     print("\nResource limits (right-hand side values):")
-    for r, l in enumerate(resource_limits):
-        print(f"  Constraint {r+1}: {l}")
+    print("Enter the numerical limit for each constraint")
+    for r in range(num_resources):
+        limit_value = float(input(f"  Constraint {r+1} limit: "))
+        resource_limits.append(limit_value)
     
     print("\nSolving...")
     result = solve(profit_values, resource_usage_matrix, resource_limits, constraint_types, is_minimize)

@@ -171,14 +171,17 @@ def interactive_mode():
         profit_values.append(value)
     
     resource_usage_matrix = []
-    print("\nResource usage (how much each product needs):")
+    print("\nResource usage:")
+    print("For each resource, enter how much of that resource each product needs")
+    print("Example: If Product 1 needs 2 units of Resource 1, enter 2")
     for resource_index in range(num_resources):
         usage_row = []
-        print(f"Resource {resource_index + 1}:")
+        print(f"\nResource {resource_index + 1}:")
         for product_index in range(num_products):
-            usage_value = float(input(f"  Product {product_index + 1}: "))
+            usage_value = float(input(f"  How much does Product {product_index + 1} need? "))
             usage_row.append(usage_value)
         resource_usage_matrix.append(usage_row)
+        print(f"  You entered: {usage_row}")
     
     resource_limits = []
     print("\nResource limits:")

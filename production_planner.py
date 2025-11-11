@@ -1,183 +1,218 @@
-def solve(profits, usage_matrix, limits):
+def solve(profits, usage_matrix, limits, minimize=False):
     num_products = len(profits)
     num_resources = len(limits)
-    num_vars = num_products + num_resources
+    num_total_variables = num_products + num_resources
     
-    c = [0.0] * num_vars
-    for i in range(num_products):
-        c[i] = profits[i]
+    objective_coefficients = [0.0] * num_total_variables
+    for product_index in range(num_products):
+        objective_coefficients[product_index] = profits[product_index]
     
-    A = []
-    for r in range(num_resources):
-        row = []
-        for p in range(num_products):
-            row.append(usage_matrix[r][p])
-        for s in range(num_resources):
-            if s == r:
-                row.append(1.0)
+    constraint_matrix = []
+    for resource_index in range(num_resources):
+        constraint_row = []
+        for product_index in range(num_products):
+            constraint_row.append(usage_matrix[resource_index][product_index])
+        for slack_index in range(num_resources):
+            if slack_index == resource_index:
+                constraint_row.append(1.0)
             else:
-                row.append(0.0)
-        A.append(row)
+                constraint_row.append(0.0)
+        constraint_matrix.append(constraint_row)
     
-    basic_vars = []
-    cb = []
-    for i in range(num_resources):
-        basic_vars.append(num_products + i)
-        cb.append(0.0)
+    basic_variables = []
+    basic_coefficients = []
+    for resource_index in range(num_resources):
+        slack_variable_index = num_products + resource_index
+        basic_variables.append(slack_variable_index)
+        basic_coefficients.append(0.0)
     
-    xb = []
-    for i in range(num_resources):
-        xb.append(limits[i])
+    basic_values = []
+    for resource_index in range(num_resources):
+        if limits[resource_index] < 0:
+            return None, "INFEASIBLE: Negative resource limit detected"
+        basic_values.append(limits[resource_index])
     
-    for iteration in range(100):
-        rel_prof = []
-        for j in range(num_vars):
-            zj = 0.0
-            for i in range(num_resources):
-                zj = zj + cb[i] * A[i][j]
-            rel_prof.append(c[j] - zj)
+    visited_bases = set()
+    max_iterations = 100
+    
+    for iteration in range(max_iterations):
+        relative_profits = []
+        for variable_index in range(num_total_variables):
+            z_value = 0.0
+            for resource_index in range(num_resources):
+                coefficient = basic_coefficients[resource_index]
+                matrix_value = constraint_matrix[resource_index][variable_index]
+                z_value = z_value + coefficient * matrix_value
+            
+            objective_coef = objective_coefficients[variable_index]
+            if minimize:
+                relative_profit = z_value - objective_coef
+            else:
+                relative_profit = objective_coef - z_value
+            relative_profits.append(relative_profit)
         
-        max_prof = 0.0
-        enter_var = -1
-        for j in range(num_vars):
-            if rel_prof[j] > max_prof:
-                max_prof = rel_prof[j]
-                enter_var = j
+        best_relative_profit = 0.0
+        entering_variable = -1
+        for variable_index in range(num_total_variables):
+            if relative_profits[variable_index] > best_relative_profit:
+                best_relative_profit = relative_profits[variable_index]
+                entering_variable = variable_index
         
-        if enter_var == -1:
+        if entering_variable == -1:
             break
         
-        min_ratio = float('inf')
-        leave_row = -1
-        for i in range(num_resources):
-            if A[i][enter_var] > 0.000001 and xb[i] > 0.000001:
-                ratio = xb[i] / A[i][enter_var]
-                if ratio < min_ratio:
-                    min_ratio = ratio
-                    leave_row = i
+        best_ratio = float('inf')
+        leaving_row = -1
+        for resource_index in range(num_resources):
+            coefficient = constraint_matrix[resource_index][entering_variable]
+            if coefficient > 0.000001:
+                ratio = basic_values[resource_index] / coefficient
+                if ratio >= 0 and ratio < best_ratio:
+                    best_ratio = ratio
+                    leaving_row = resource_index
         
-        if leave_row == -1:
-            print("Problem is unbounded")
-            return None
+        if leaving_row == -1:
+            return None, "UNBOUNDED: Problem has unbounded solution"
         
-        pivot = A[leave_row][enter_var]
+        pivot_element = constraint_matrix[leaving_row][entering_variable]
         
-        for j in range(num_vars):
-            A[leave_row][j] = A[leave_row][j] / pivot
-        xb[leave_row] = xb[leave_row] / pivot
+        for variable_index in range(num_total_variables):
+            constraint_matrix[leaving_row][variable_index] = constraint_matrix[leaving_row][variable_index] / pivot_element
+        basic_values[leaving_row] = basic_values[leaving_row] / pivot_element
         
-        for i in range(num_resources):
-            if i != leave_row:
-                mult = A[i][enter_var]
-                for j in range(num_vars):
-                    A[i][j] = A[i][j] - mult * A[leave_row][j]
-                xb[i] = xb[i] - mult * xb[leave_row]
+        for resource_index in range(num_resources):
+            if resource_index != leaving_row:
+                multiplier = constraint_matrix[resource_index][entering_variable]
+                for variable_index in range(num_total_variables):
+                    old_value = constraint_matrix[resource_index][variable_index]
+                    pivot_row_value = constraint_matrix[leaving_row][variable_index]
+                    constraint_matrix[resource_index][variable_index] = old_value - multiplier * pivot_row_value
+                old_basic_value = basic_values[resource_index]
+                pivot_row_basic_value = basic_values[leaving_row]
+                basic_values[resource_index] = old_basic_value - multiplier * pivot_row_basic_value
         
-        basic_vars[leave_row] = enter_var
-        cb[leave_row] = c[enter_var]
+        basic_variables[leaving_row] = entering_variable
+        basic_coefficients[leaving_row] = objective_coefficients[entering_variable]
+        
+        base_signature = tuple(sorted(basic_variables))
+        if base_signature in visited_bases:
+            return None, "DEGENERATE: Cycling detected (degenerate solution)"
+        visited_bases.add(base_signature)
     
     solution = {}
-    for p in range(num_products):
-        found = False
-        for i in range(num_resources):
-            if basic_vars[i] == p:
-                solution[p] = xb[i]
-                found = True
+    for product_index in range(num_products):
+        found_in_basis = False
+        for resource_index in range(num_resources):
+            if basic_variables[resource_index] == product_index:
+                solution[product_index] = basic_values[resource_index]
+                found_in_basis = True
                 break
-        if not found:
-            solution[p] = 0.0
+        if not found_in_basis:
+            solution[product_index] = 0.0
     
-    optimal = 0.0
-    for i in range(num_resources):
-        optimal = optimal + cb[i] * xb[i]
+    optimal_value = 0.0
+    for resource_index in range(num_resources):
+        coefficient = basic_coefficients[resource_index]
+        value = basic_values[resource_index]
+        optimal_value = optimal_value + coefficient * value
     
-    return solution, optimal
+    relative_profits_final = []
+    for variable_index in range(num_total_variables):
+        z_value = 0.0
+        for resource_index in range(num_resources):
+            coefficient = basic_coefficients[resource_index]
+            matrix_value = constraint_matrix[resource_index][variable_index]
+            z_value = z_value + coefficient * matrix_value
+        
+        objective_coef = objective_coefficients[variable_index]
+        if minimize:
+            relative_profit = z_value - objective_coef
+        else:
+            relative_profit = objective_coef - z_value
+        relative_profits_final.append(relative_profit)
+    
+    has_alternate_solution = False
+    for product_index in range(num_products):
+        is_basic_variable = False
+        for resource_index in range(num_resources):
+            if basic_variables[resource_index] == product_index:
+                is_basic_variable = True
+                break
+        
+        if not is_basic_variable:
+            relative_profit_value = relative_profits_final[product_index]
+            if abs(relative_profit_value) < 0.000001:
+                has_alternate_solution = True
+                break
+    
+    if has_alternate_solution:
+        status = "ALTERNATE_SOLUTION"
+    else:
+        status = "OPTIMAL"
+    
+    return solution, optimal_value, status
+
 
 def interactive_mode():
     print("Production Planning Solver")
     print("=" * 40)
     
+    optimization_type = input("Optimization type (max/min): ").lower()
+    is_minimize = optimization_type == "min"
+    
     num_products = int(input("Number of products: "))
     num_resources = int(input("Number of resources: "))
     
-    profits = []
-    print("\nProfit for each product:")
-    for i in range(num_products):
-        p = float(input(f"  Product {i+1}: "))
-        profits.append(p)
+    profit_values = []
+    cost_or_profit_label = "Cost" if is_minimize else "Profit"
+    print(f"\n{cost_or_profit_label} for each product:")
+    for product_index in range(num_products):
+        value = float(input(f"  Product {product_index + 1}: "))
+        profit_values.append(value)
     
-    usage_matrix = []
+    resource_usage_matrix = []
     print("\nResource usage (how much each product needs):")
-    for r in range(num_resources):
-        row = []
-        print(f"Resource {r+1}:")
-        for p in range(num_products):
-            u = float(input(f"  Product {p+1}: "))
-            row.append(u)
-        usage_matrix.append(row)
+    for resource_index in range(num_resources):
+        usage_row = []
+        print(f"Resource {resource_index + 1}:")
+        for product_index in range(num_products):
+            usage_value = float(input(f"  Product {product_index + 1}: "))
+            usage_row.append(usage_value)
+        resource_usage_matrix.append(usage_row)
     
-    limits = []
+    resource_limits = []
     print("\nResource limits:")
-    for r in range(num_resources):
-        l = float(input(f"  Resource {r+1}: "))
-        limits.append(l)
+    for resource_index in range(num_resources):
+        limit_value = float(input(f"  Resource {resource_index + 1}: "))
+        resource_limits.append(limit_value)
     
     print("\nSolving...")
-    result = solve(profits, usage_matrix, limits)
+    result = solve(profit_values, resource_usage_matrix, resource_limits, is_minimize)
     
-    if result is None:
+    if len(result) == 2 and result[0] is None:
+        error_message = result[1]
+        print(f"\nERROR: {error_message}")
         return
     
-    solution, optimal = result
+    solution_dict, optimal_value, solution_status = result
     
     print("\n" + "=" * 40)
-    print("OPTIMAL SOLUTION")
+    if solution_status == "OPTIMAL":
+        print("OPTIMAL SOLUTION")
+    elif solution_status == "ALTERNATE_SOLUTION":
+        print("OPTIMAL SOLUTION (Alternative solutions exist)")
     print("=" * 40)
-    for i in range(num_products):
-        print(f"Product {i+1}: {solution[i]:.2f}")
-    print(f"\nMaximum Profit: {optimal:.2f}")
+    
+    for product_index in range(num_products):
+        product_value = solution_dict[product_index]
+        print(f"Product {product_index + 1}: {product_value:.2f}")
+    
+    if is_minimize:
+        result_label = "Minimum Cost"
+    else:
+        result_label = "Maximum Profit"
+    print(f"\n{result_label}: {optimal_value:.2f}")
 
-def example_mode():
-    print("Example Problem")
-    print("=" * 40)
-    print("3 products (A, B, C)")
-    print("Maximize Z = 4x1 + 3x2 + 6x3")
-    print("\nConstraints:")
-    print("  2x1 + 3x2 + 2x3 <= 440")
-    print("  4x1 + 0x2 + 3x3 <= 470")
-    print("  2x1 + 5x2 + 0x3 <= 430")
-    print("=" * 40)
-    
-    profits = [4.0, 3.0, 6.0]
-    usage_matrix = [
-        [2.0, 3.0, 2.0],
-        [4.0, 0.0, 3.0],
-        [2.0, 5.0, 0.0]
-    ]
-    limits = [440.0, 470.0, 430.0]
-    
-    result = solve(profits, usage_matrix, limits)
-    
-    if result is None:
-        return
-    
-    solution, optimal = result
-    
-    print("\nOPTIMAL SOLUTION")
-    print("=" * 40)
-    print(f"Product A (x1): {solution[0]:.2f}")
-    print(f"Product B (x2): {solution[1]:.2f}")
-    print(f"Product C (x3): {solution[2]:.2f}")
-    print(f"\nMaximum Profit (Z): {optimal:.2f}")
-    print(f"\nExpected: x1=0, x2=380/9≈42.22, x3=470/3≈156.67, Z=3200/3≈1066.67")
 
 if __name__ == "__main__":
-    print("Choose mode:")
-    print("1. Interactive")
-    print("2. Example")
-    choice = input("\nChoice (1 or 2): ")
-    
-    if choice == "2":
-        example_mode()
-    else:
-        interactive_mode()
+    interactive_mode()

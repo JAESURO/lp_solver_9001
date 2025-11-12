@@ -17,9 +17,5 @@ It can handle optimization problems that aim to minimize or maximize a linear ob
 ```bash
 git clone https://github.com/JAESURO/lp_solver_9001.git
 cd lp_solver_9001
-# optional: create a virtual environment
-python3 -m venv venv
-source venv/bin/activate   # Linux / macOS
-venv\Scripts\activate      # Windows
-# run the main example
-python3 lpp.py
+
+streamlit run lpp.py
